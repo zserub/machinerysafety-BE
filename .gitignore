@@ -1,0 +1,19 @@
+# Env
+.env
+
+# Build output
+/bin
+/machinerysafety-BE
+/machinery-safety-backend
+coverage.out
+
+# Local / private files
+.claude
+.vscode
+CLAUDE.md
+/Instructions
+/.github
+node_modules
+package.json
+package-lock.json
+*.backup

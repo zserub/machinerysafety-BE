@@ -1,0 +1,165 @@
+# Local development docker-compose
+# Builds backend and frontend from source instead of pulling from registry
+#
+# Usage:
+#   make dev-up      # Start all services
+#   make dev-build   # Rebuild backend and frontend
+#   make dev-logs    # View logs
+
+services:
+  frontend:
+    build:
+      context: ../machinerysafety-FE
+      dockerfile: Dockerfile
+      args:
+        VERSION: dev-local
+        VITE_LOG_LEVEL: ${VITE_LOG_LEVEL:-debug}
+    container_name: webapp_frontend_dev
+    restart: unless-stopped
+    environment:
+      PUBLIC_API_URL: http://backend:8080
+      HOST: 0.0.0.0
+      PORT: 3000
+    ports:
+      - "3001:3000"
+    networks:
+      - dev-network
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: dev-local
+    container_name: webapp_backend_dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SERVER_HOST: 0.0.0.0
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-machinery_safety}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      DB_SCHEMA: ${DB_SCHEMA:-public}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-password}
+      MINIO_BUCKET: ${MINIO_BUCKET:-webapp-photos}
+      MINIO_USE_SSL: "false"
+      METABASE_URL: http://metabase:3000
+      METABASE_PUBLIC_URL: ${METABASE_PUBLIC_URL:-http://localhost:3000}
+      METABASE_API_KEY: ${METABASE_API_KEY:-}
+      METABASE_SECRET_KEY: ${METABASE_SECRET_KEY:-}
+      SESSION_KEY: ${SESSION_KEY:-ZGV2LW9ubHktc2Vzc2lvbi1rZXktZG8tbm90LXVzZSE=}
+      SESSION_SECURE: "false"
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      LOG_FORMAT: text
+      RUN_MIGRATIONS: "true"
+      # Mock users/risks (all passwords: "password") - mounted, never baked into the image
+      SEEDS_PATH: file://seeds
+      RUN_METABASE_SETUP: ${RUN_METABASE_SETUP:-false}
+      METABASE_DATABASE_ID: ${METABASE_DATABASE_ID:-3}
+    volumes:
+      - ./logs:/app/logs
+      - ./seeds:/app/seeds:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - dev-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: webapp_postgres_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-machinery_safety}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-machinery_safety}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: webapp_minio_dev
+    restart: unless-stopped
+    command: server /data --console-address ":9001" --address ":9000"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-password}
+    volumes:
+      - minio-dev-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - dev-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: webapp_metabase_dev
+    restart: unless-stopped
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: ${MB_DB_DBNAME:-metabase}
+      MB_DB_PORT: 5432
+      MB_DB_USER: ${POSTGRES_USER:-postgres}
+      MB_DB_PASS: ${POSTGRES_PASSWORD:-password}
+      MB_DB_HOST: postgres
+      JAVA_OPTS: -Xmx512m
+    volumes:
+      - metabase-dev-data:/metabase-data
+    ports:
+      - "3000:3000"
+    networks:
+      - dev-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - metabase  # Optional, start with: make dev-up-full
+
+networks:
+  dev-network:
+    driver: bridge
+
+volumes:
+  postgres-dev-data:
+  minio-dev-data:
+  metabase-dev-data:

@@ -1,0 +1,27 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Documentation
+*.md
+LICENSE
+Instructions/
+
+# Local development
+.env
+.env.*
+docker-compose*.yml
+
+# Build artifacts
+*.exe
+machinery-safety-backend
+
+# Test files
+*_test.go
+coverage.out
